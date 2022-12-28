@@ -1,8 +1,9 @@
-﻿<#
+<#
 
     Script for installing zabbix agent to windows os. Intended for environments without automation to ease admin work :D
 
 .Last change
+ 04 - Added automatic latest version check and if version is present at the script ask to use that.
  03 - Changed Parameters collection - doesnt work if param is not the first thing in script.
  02 - Added comments and code cleanup.
  01 - Removed Get-WmiObject commands as that is deprecated in powershell 7 / Use Get-CimInstance
@@ -12,20 +13,32 @@ Script for installing Zabbix Agent on windows machines.
 
 .Author Tomaž Čoha & Tone Kravanja
 
-.Version 1.03
+.Version 1.04
 
-(((((Invoke-WebRequest https://cdn.zabbix.com/zabbix/binaries/stable/5.0/).Links | Select-Object href | Where-Object {$_.href -like "5.0.*"} ).href).substring(4,1)) | Measure-Object -Maximum).maximum
-
-Latest version identification ...
 #>
+
+
 <# Collect parameters from env. parameters that are passed #>
 param([switch]$Elevated, [string]$ip, [switch]$force)
 
-$url64 = "https://cdn.zabbix.com/zabbix/binaries/stable/5.0/5.0.18/zabbix_agent2-5.0.18-windows-amd64-openssl.msi"
-$url32 = "https://cdn.zabbix.com/zabbix/binaries/stable/5.0/5.0.18/zabbix_agent-5.0.18-windows-amd64-openssl.msi"
 
-<# TO DO - automatic check for newer version of agent #>
+$urlBase = "https://cdn.zabbix.com/zabbix/binaries/stable/5.0"
 
+$tttt = @()
+
+Write-Host "Preverjam zadnjo verzijo agenta ...  " -NoNewline
+
+<# Get list of available versions on server #>
+$ttt1=$(Invoke-WebRequest -Uri $urlBase).links.href | select-string -pattern "5.0" -NoEmphasis
+<# Trim leading \ from end of all strings #>
+$ttt1 | %{ $tttt += $_.ToString().trimend('/') }
+<# Look for higest available version with conversion to Version variable (nifty trick) #>
+$LatestVersion=$($tttt | %{[System.version]$_}|Measure-Object -maximum).Maximum.ToString()
+
+Write-host -BackgroundColor DarkGreen -ForegroundColor White $LatestVersion
+
+$url64 = "https://cdn.zabbix.com/zabbix/binaries/stable/5.0/$LatestVersion/zabbix_agent2-$LatestVersion-windows-amd64-openssl.msi"
+$url32 = "https://cdn.zabbix.com/zabbix/binaries/stable/5.0/$LatestVersion/zabbix_agent2-$LatestVersion-windows-i386-openssl.msi"
 
 
 function CheckAdmin {
@@ -54,6 +67,8 @@ exit
 $systemArchitecture = (get-ciminstance CIM_OperatingSystem).OSArchitecture
 Write-Host "Sistem je " -NoNewline
 Write-host -BackgroundColor DarkGreen -ForegroundColor White $systemArchitecture
+
+
 
 
 <# If IP is empty collect it from user #>
@@ -90,20 +105,37 @@ $file = "$PSScriptRoot\ZabbixAgentInstaller.log"
 try {
 if ($systemArchitecture -eq "64-bit") {
     $url = $url64
-    $output = "$PSScriptRoot\zabbix_agent2-5.0.7-windows-amd64-openssl.msi"
+    $output = "$PSScriptRoot\zabbix-amd64-openssl.msi"
     }
 else {
     $url = $url32
-    $output = "$PSScriptRoot\zabbix_agent2-5.0.7-windows-i386-openssl.msi"
+    $output = "$PSScriptRoot\zabbix-i386-openssl.msi"
 }
 
 $start_time = Get-Date
 
-Write-Host "`n`nDownloading Zabbix Agent installation..."
 
-Invoke-WebRequest -Uri $url -OutFile $output
+if (Test-Path -Path $output -PathType Leaf) {
+   
+    $choices = '&Yes', '&No'
 
-Write-Host "Download complete.`n"
+    $decision = $Host.UI.PromptForChoice("File already exists.", "Do you want to use downloaded file?", $choices, 0)
+    if ($decision -eq 0) {
+        Write-Host "`n`nUsing existing file ...."
+    } else {
+        Write-Host "`n`nRemoving file and Downloading Zabbix Agent installation..."
+        Remove-Item $output -Force 
+        Invoke-WebRequest -Uri $url -OutFile $output
+    }
+
+} else {
+    Write-Host "`n`nDownloading Zabbix Agent installation..."
+    Invoke-WebRequest -Uri $url -OutFile $output
+}
+
+
+
+Write-Host "Prenos zaključen.`n"
 Write-Output "Time taken: $((Get-Date).Subtract($start_time).Seconds) second(s)"
 } catch {
     $errorOutput = $_
@@ -146,5 +178,3 @@ if ($prereqSatisfied -eq $true -or $force) {
 } else {
     Write-Host -BackgroundColor DarkRed -ForegroundColor White "Something went wrong, skipped install."
 }
-
-
