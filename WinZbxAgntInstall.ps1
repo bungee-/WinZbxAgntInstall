@@ -23,8 +23,8 @@ function Get-LatestMajorVersions {
     try {
         $baseUrl = "https://cdn.zabbix.com/zabbix/binaries/stable/"
         $response = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing
-        $allVersions = $response.Links | Where-Object { $_.href -match '^\d+\.\d+/\$' } | ForEach-Object {
-            $_.href.TrimEnd('/')
+        $allVersions = $response.Links.href | Where-Object { $_ -match '^\d+\.\d+' } | ForEach-Object {
+            $_.TrimEnd('/')
         }
         $parsedVersions = $allVersions | Sort-Object {[version]$_} -Descending
         return $parsedVersions | Select-Object -First $count
@@ -41,8 +41,7 @@ function Get-LatestPatchVersion {
     try {
         $url = "https://cdn.zabbix.com/zabbix/binaries/stable/$majorVersion/"
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing
-        $versions = $response.Links | Where-Object { $_.href -match "^$majorVersion\\.\d+/\$" } | ForEach-Object {
-            $_.href.TrimEnd('/')
+        $versions = $response.Links.href | Where-Object { $_ -match "^$majorVersion" } | ForEach-Object { $_.TrimEnd('/')
         }
         $latestPatch = ($versions | ForEach-Object { [Version]$_ }) | Sort-Object -Descending | Select-Object -First 1
         return $latestPatch.ToString()
@@ -72,9 +71,10 @@ if ((CheckAdmin) -eq $false)  {
 Write-Host "Preverjam zadnje tri podprte Zabbix verzije ..."
 $majorVersions = Get-LatestMajorVersions
 
+
 Write-Host "`nIzberi verzijo Zabbix agenta za namestitev:`n"
 for ($i = 0; $i -lt $majorVersions.Count; $i++) {
-    Write-Host "[$i] Zabbix $($majorVersions[$i])"
+    Write-Host ("[{0}] Zabbix {1}" -f $i, $majorVersions[$i])
 }
 
 $index = Read-Host -Prompt "Vnesi številko verzije (0-$($majorVersions.Count - 1))"
@@ -84,6 +84,8 @@ if ($index -notmatch '^\d+$' -or [int]$index -ge $majorVersions.Count) {
 }
 
 $selectedMajor = $majorVersions[$index]
+
+
 $LatestVersion = Get-LatestPatchVersion -majorVersion $selectedMajor
 Write-Host -BackgroundColor DarkGreen -ForegroundColor White "`nIzbrana verzija je: $LatestVersion`n"
 
